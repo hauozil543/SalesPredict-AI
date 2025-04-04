@@ -1,0 +1,23 @@
+# Ẩn môi trường ảo và thư viện
+myenv/
+venv/
+__pycache__/
+
+# Ẩn dữ liệu lớn, nhạy cảm
+data/raw/
+data/processed/
+database/m5_forecasting.db
+
+# Ẩn file hệ thống và Jupyter notebook cache
+.DS_Store
+Thumbs.db
+.ipynb_checkpoints/
+
+# Ẩn file log, kết quả chạy tạm
+*.log
+*.csv
+*.db
+
+
+.ipynb_checkpoints/
+node_modules/
