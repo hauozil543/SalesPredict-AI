@@ -1,16 +1,10 @@
-from flask import Flask, jsonify
-from flask_cors import CORS
-from routes.forecast import forecast_bp  # Import route dự báo
+from flask import Flask
+from routes.chart import chart_bp  # Import Blueprint từ routes
 
 app = Flask(__name__)
-CORS(app)  # Cho phép frontend React gọi API từ backend
 
-# Đăng ký route
-app.register_blueprint(forecast_bp, url_prefix='/api')
+# Đăng ký Blueprint vào ứng dụng
+app.register_blueprint(chart_bp, url_prefix='/chart')
 
-@app.route("/")
-def home():
-    return jsonify({"message": "Welcome to M5 Forecasting API"})
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
