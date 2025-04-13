@@ -8,13 +8,15 @@ import Forecast from "./pages/Forecast";
 
 function App() {
 	return (
-		<Routes>
+		<div>
+			<Routes>
 			<Route path="/" element={<Adminlayout />}>
         	<Route index element={<HomePage/>} />
         	<Route path="/history" element={<History/>} />
 			<Route path="/forecast" element={<Forecast/>} />
 			</Route>
 		</Routes>
+		</div>
 	);
 }
 
