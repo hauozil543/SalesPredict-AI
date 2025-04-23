@@ -1,16 +1,18 @@
 import sqlite3
 
-conn = sqlite3.connect("m5_forecasting.db")
-cursor = conn.cursor()
+def init_db():
+    conn = sqlite3.connect('database/m5_forecasting.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS predictions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            input_data TEXT NOT NULL,
+            prediction FLOAT NOT NULL,
+            prediction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# Tạo bảng trong cơ sở dữ liệu
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS normalized_train_data (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        normalized_value REAL
-    )
-''')
-
-conn.commit()
-conn.close()
-print("✅ Database và bảng normalized_train_data đã được tạo thành công!")
+if __name__ == '__main__':
+    init_db()
