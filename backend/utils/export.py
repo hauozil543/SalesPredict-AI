@@ -1,24 +1,19 @@
-import pandas as pd
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-import os
+import pickle
 
-def export_to_csv(predictions):
-    df = pd.DataFrame(predictions)
-    filepath = 'static/history_export.csv'
-    df.to_csv(filepath, index=False)
-    return filepath
+def load_encoders():
+    """
+    Tải item_encoder và store_encoder từ file pickle.
+    """
+    with open('utils/item_encoder.pkl', 'rb') as f:
+        item_enc = pickle.load(f)
+    with open('utils/store_encoder.pkl', 'rb') as f:
+        store_enc = pickle.load(f)
+    return item_enc, store_enc
 
-def export_to_pdf(predictions):
-    filepath = 'static/history_export.pdf'
-    c = canvas.Canvas(filepath, pagesize=letter)
-    c.drawString(100, 750, "Prediction History Report")
-    y = 700
-    for pred in predictions:
-        c.drawString(100, y, f"ID: {pred['id']}, Prediction: {pred['prediction']}, Date: {pred['prediction_date']}")
-        y -= 20
-        if y < 50:
-            c.showPage()
-            y = 750
-    c.save()
-    return filepath
+def load_scaler():
+    """
+    Tải scaler từ file pickle.
+    """
+    with open('utils/scaler.pkl', 'rb') as f:
+        scaler = pickle.load(f)
+    return scaler

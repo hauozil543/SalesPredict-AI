@@ -1,90 +1,121 @@
-import torch
-import torch.nn as nn
-from torch.amp import autocast  # Sửa import: từ torch.cuda.amp thành torch.amp
+import pandas as pd
 import numpy as np
-import pickle
-
-class LSTMEmbForecast(nn.Module):
-    def __init__(self, n_items, n_stores, embed_dim, num_feats, hidden_size, num_layers=2):
-        super().__init__()
-        self.item_emb = nn.Embedding(n_items, embed_dim)
-        self.store_emb = nn.Embedding(n_stores, embed_dim)
-        input_size = embed_dim * 2 + num_feats
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers=num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, 1)
-
-    def forward(self, X_num, X_item, X_store):
-        item_emb = self.item_emb(X_item)
-        store_emb = self.store_emb(X_store)
-        X = torch.cat((X_num, item_emb, store_emb), dim=-1)
-        lstm_out, _ = self.lstm(X)
-        out = self.fc(lstm_out[:, -1, :])
-        return out.squeeze()
+import torch
+from models.lstm_model import LSTMEmbForecast
+from datetime import datetime, timedelta
 
 class Predictor:
-    def __init__(self, model_path='best_model.pth', params_path='model_params.txt'):
-        try:
-            # Đọc tham số mô hình
-            with open(params_path, 'r') as f:
-                lines = f.readlines()
-                if len(lines) < 3:
-                    raise ValueError(f"model_params.txt must have at least 3 lines, got {len(lines)}")
+    def __init__(self, model_path, item_enc, store_enc, scaler):
+        self.item_enc = item_enc
+        self.store_enc = store_enc
+        self.scaler = scaler
 
-                # Đọc num_items
-                num_items_line = lines[0].strip()
-                if not num_items_line.startswith('num_items: '):
-                    raise ValueError("First line must start with 'num_items: '")
-                self.num_items = int(num_items_line.split(': ')[1])
+        # Tải thông số mô hình
+        self.device = torch.device('cpu')
+        self.window_size = 28
+        self.feature_cols = ['day', 'weekday_sin', 'weekday_cos', 'month_sin', 'month_cos', 'week',
+                            'sales_lag_7', 'sales_lag_14', 'sales_lag_28', 'rolling_mean_7', 'rolling_mean_14',
+                            'sell_price', 'event', 'snap']
+        
+        # Tải mô hình
+        self.model = LSTMEmbForecast(
+            n_items=len(item_enc),
+            n_stores=len(store_enc),
+            embed_dim=16,
+            num_feats=len(self.feature_cols),
+            hidden_size=64,
+            num_layers=2,
+            dropout=0.25
+        ).to(self.device)
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        self.model.eval()
 
-                # Đọc num_stores
-                num_stores_line = lines[1].strip()
-                if not num_stores_line.startswith('num_stores: '):
-                    raise ValueError("Second line must start with 'num_stores: '")
-                self.num_stores = int(num_stores_line.split(': ')[1])
+    def create_future_features(self, historical_data, forecast_days):
+        """
+        Tạo dữ liệu cho các ngày tương lai dựa trên dữ liệu lịch sử.
+        """
+        last_date = pd.to_datetime(historical_data['date'].iloc[-1])
+        future_dates = [last_date + timedelta(days=i) for i in range(1, forecast_days + 1)]
+        future_df = pd.DataFrame({
+            'date': future_dates,
+            'item_idx': historical_data['item_idx'].iloc[-1],
+            'store_idx': historical_data['store_idx'].iloc[-1],
+            'sell_price': historical_data['sell_price'].iloc[-1],
+            'event': 0,
+            'snap': 0
+        })
 
-                # Đọc feature_cols
-                feature_cols_line = lines[2].strip()
-                if not feature_cols_line.startswith('feature_cols: '):
-                    raise ValueError("Third line must start with 'feature_cols: '")
-                self.feature_cols = eval(feature_cols_line.split(': ')[1])
+        # Tính các đặc trưng thời gian
+        future_df['day'] = future_df['date'].dt.day
+        future_df['month'] = future_df['date'].dt.month
+        future_df['weekday'] = future_df['date'].dt.weekday
+        future_df['week'] = future_df['date'].dt.isocalendar().week.astype('int64')
+        future_df['weekday_sin'] = np.sin(2 * np.pi * future_df['weekday'] / 7)
+        future_df['weekday_cos'] = np.cos(2 * np.pi * future_df['weekday'] / 7)
+        future_df['month_sin'] = np.sin(2 * np.pi * future_df['month'] / 12)
+        future_df['month_cos'] = np.cos(2 * np.pi * future_df['month'] / 12)
 
-            # Tải scaler
-            with open('utils/scaler.pkl', 'rb') as f:
-                self.scaler = pickle.load(f)
+        # Ban đầu, để các cột sales và lag là 0
+        future_df['sales'] = 0
+        for lag in [7, 14, 28]:
+            future_df[f'sales_lag_{lag}'] = 0
+        future_df['rolling_mean_7'] = 0
+        future_df['rolling_mean_14'] = 0
 
-            # Tải mô hình
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            self.model = LSTMEmbForecast(
-                n_items=self.num_items,
-                n_stores=self.num_stores,
-                embed_dim=16,
-                num_feats=len(self.feature_cols),
-                hidden_size=128,
-                num_layers=2
-            ).to(self.device)
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-            self.model.eval()
-        except Exception as e:
-            raise ValueError(f"Failed to initialize Predictor: {str(e)}")
+        return future_df
 
-    def predict(self, X_num, X_item, X_store):
-        # Chuyển đổi dữ liệu thành tensor
-        X_num = torch.tensor(X_num, dtype=torch.float32).to(self.device)
-        X_item = torch.tensor(X_item, dtype=torch.int64).to(self.device)
-        X_store = torch.tensor(X_store, dtype=torch.int64).to(self.device)
+    def predict(self, historical_data, forecast_days):
+        """
+        Dự báo doanh số cho forecast_days ngày tiếp theo.
+        """
+        predictions = []
+        data = historical_data.copy()
 
-        # Dự báo với autocast sửa đổi
-        with torch.no_grad():
-            # Sử dụng torch.amp.autocast với cú pháp mới
-            device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
-            with autocast(device_type=device_type, enabled=True):
-                pred = self.model(X_num, X_item, X_store)
-        pred = pred.cpu().numpy()
+        # Tạo dữ liệu cho các ngày tương lai
+        future_df = self.create_future_features(data, forecast_days)
+        full_data = pd.concat([data, future_df], ignore_index=True)
 
-        # Tạo mảng giả để khôi phục giá trị gốc
-        dummy_array = np.zeros((1, 6))  # 6 cột trong numeric_cols: ['sell_price', 'sales', 'sales_lag_7', 'sales_lag_14', 'sales_lag_28', 'rolling_mean_7']
-        dummy_array[0, 1] = pred  # Cột thứ 1 là 'sales'
+        # Chuyển đổi kiểu dữ liệu cho các cột
+        for col in self.feature_cols:
+            full_data[col] = pd.to_numeric(full_data[col], errors='coerce').fillna(0)
+        full_data['item_idx'] = pd.to_numeric(full_data['item_idx'], errors='coerce').fillna(0).astype(int)
+        full_data['store_idx'] = pd.to_numeric(full_data['store_idx'], errors='coerce').fillna(0).astype(int)
 
-        # Khôi phục giá trị gốc
-        pred_orig = self.scaler.inverse_transform(dummy_array)
-        return float(pred_orig[0, 1])  # Lấy giá trị gốc của cột 'sales'
+        for i in range(forecast_days):
+            # Lấy window dữ liệu để dự báo
+            start_idx = len(full_data) - self.window_size - forecast_days + i
+            window_data = full_data.iloc[start_idx:start_idx + self.window_size]
+
+            # Chuẩn bị dữ liệu đầu vào cho mô hình
+            X_num = torch.FloatTensor(window_data[self.feature_cols].values).unsqueeze(0).to(self.device)
+            X_item = torch.LongTensor(window_data['item_idx'].values).unsqueeze(0).to(self.device)
+            X_store = torch.LongTensor(window_data['store_idx'].values).unsqueeze(0).to(self.device)
+
+            # Dự báo
+            with torch.no_grad():
+                pred = self.model(X_num, X_item, X_store).item()
+
+            # Giải chuẩn hóa kết quả (chỉ áp dụng cho cột sales)
+            dummy_input = np.zeros((1, 6))  # Scaler kỳ vọng 6 cột
+            dummy_input[0, 0] = pred  # Cột đầu tiên là sales
+            pred_unscaled = self.scaler.inverse_transform(dummy_input)[0][0]  # Lấy giá trị sales đã giải chuẩn hóa
+            predictions.append(float(pred_unscaled))  # Lưu giá trị đã giải chuẩn hóa
+
+            # Cập nhật sales với giá trị chuẩn hóa cho lần dự báo tiếp theo
+            pred_scaled = pred  # Giá trị đã chuẩn hóa
+            full_data.loc[len(data) + i, 'sales'] = pred_scaled
+
+            # Cập nhật lag features
+            for lag in [7, 14, 28]:
+                if len(data) + i - lag >= 0:
+                    full_data.loc[len(data) + i, f'sales_lag_{lag}'] = full_data.loc[len(data) + i - lag, 'sales']
+
+            # Cập nhật rolling mean
+            if len(data) + i >= 7:
+                rolling_data_7 = full_data.loc[len(data) + i - 7:len(data) + i - 1, 'sales']
+                full_data.loc[len(data) + i, 'rolling_mean_7'] = rolling_data_7.mean()
+            if len(data) + i >= 14:
+                rolling_data_14 = full_data.loc[len(data) + i - 14:len(data) + i - 1, 'sales']
+                full_data.loc[len(data) + i, 'rolling_mean_14'] = rolling_data_14.mean()
+
+        return predictions

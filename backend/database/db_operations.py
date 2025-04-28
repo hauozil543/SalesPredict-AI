@@ -1,28 +1,17 @@
+import pandas as pd
 import sqlite3
-import json
 
-def insert_prediction(input_data, prediction):
-    conn = sqlite3.connect('database/m5_forecasting.db')
-    cursor = conn.cursor()
-    cursor.execute(
-        'INSERT INTO predictions (input_data, prediction) VALUES (?, ?)',
-        (json.dumps(input_data), float(prediction))
-    )
-    conn.commit()
+def get_historical_data(item_idx, store_idx):
+    """
+    Lấy dữ liệu lịch sử từ processed_data.db dựa trên item_idx và store_idx.
+    """
+    conn = sqlite3.connect('processed_data.db')
+    query = """
+    SELECT *
+    FROM data
+    WHERE item_idx = ? AND store_idx = ?
+    ORDER BY date
+    """
+    df = pd.read_sql_query(query, conn, params=(item_idx, store_idx))
     conn.close()
-
-def get_all_predictions():
-    conn = sqlite3.connect('database/m5_forecasting.db')
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, input_data, prediction, prediction_date FROM predictions')
-    rows = cursor.fetchall()
-    conn.close()
-    return [
-        {
-            'id': row[0],
-            'input_data': json.loads(row[1]),
-            'prediction': row[2],
-            'prediction_date': row[3]
-        }
-        for row in rows
-    ]
+    return df
