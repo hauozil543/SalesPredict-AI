@@ -1,17 +1,8 @@
-import pickle
-import numpy as np
+import sqlite3
+import pandas as pd
 
-# Tải scaler
-with open('utils/scaler.pkl', 'rb') as f:
-    scaler = pickle.load(f)
-
-# Kiểm tra thông số của scaler
-print("Số cột mà scaler kỳ vọng:", scaler.n_features_in_)
-print("Min của từng cột:", scaler.data_min_)
-print("Max của từng cột:", scaler.data_max_)
-
-# Thử giải chuẩn hóa một giá trị
-dummy_input = np.zeros((1, scaler.n_features_in_))
-dummy_input[0, 0] = 0.541471152799204  # Giá trị dự báo lớn nhất
-unscaled = scaler.inverse_transform(dummy_input)[0][0]
-print("Giá trị giải chuẩn hóa:", unscaled)
+conn = sqlite3.connect('historical_data.db')
+query = "SELECT date, sales, sell_price, day_of_week, snap_CA, is_holiday FROM historical_data WHERE item_id = 'FOODS_1_218' AND store_id = 'CA_1' AND date <= '2016-04-24' ORDER BY date DESC LIMIT 28"
+df = pd.read_sql_query(query, conn)
+conn.close()
+print(df)

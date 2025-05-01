@@ -1,3 +1,0 @@
-num_items: 44
-num_stores: 10
-feature_cols: ['day', 'weekday_sin', 'weekday_cos', 'month_sin', 'month_cos', 'week', 'sales_lag_7', 'sales_lag_14', 'sales_lag_28', 'rolling_mean_7', 'rolling_mean_7', 'sell_price', 'event', 'snap']

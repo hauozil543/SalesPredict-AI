@@ -96,9 +96,11 @@ class Predictor:
                 pred = self.model(X_num, X_item, X_store).item()
 
             # Giải chuẩn hóa kết quả (chỉ áp dụng cho cột sales)
-            dummy_input = np.zeros((1, 6))  # Scaler kỳ vọng 6 cột
+            dummy_input = np.zeros((1, 7))  # Scaler kỳ vọng 7 cột
             dummy_input[0, 0] = pred  # Cột đầu tiên là sales
             pred_unscaled = self.scaler.inverse_transform(dummy_input)[0][0]  # Lấy giá trị sales đã giải chuẩn hóa
+            print("pred:", pred)
+            print("pred_unscaled:", pred_unscaled)
             predictions.append(float(pred_unscaled))  # Lưu giá trị đã giải chuẩn hóa
 
             # Cập nhật sales với giá trị chuẩn hóa cho lần dự báo tiếp theo

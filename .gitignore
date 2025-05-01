@@ -2,6 +2,7 @@
 myenv/
 venv/
 __pycache__/
+venv1/
 
 # Ẩn dữ liệu lớn, nhạy cảm
 data/raw/
