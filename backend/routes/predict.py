@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from datetime import datetime, timedelta
 import pickle
-
+from flask_cors import CORS
 # Định nghĩa đường dẫn cơ sở dữ liệu chung
 DB_PATH = 'C:/Users/Ho Hau/Downloads/M5/backend/historical_data.db'
 
@@ -20,7 +20,13 @@ if torch.cuda.is_available():
 else:
     print("Warning: No GPU found. Running on CPU.")
 
+
 predict_bp = Blueprint('predict', __name__)
+
+# Cấu hình CORS cho Blueprint
+CORS(predict_bp, resources={r"/predict": {"origins": "http://localhost:5173"}})
+CORS(predict_bp, resources={r"/history": {"origins": "http://localhost:5173"}})
+
 
 # Định nghĩa mô hình LSTM
 class LSTMModel(nn.Module):
