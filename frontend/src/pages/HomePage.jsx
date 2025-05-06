@@ -186,7 +186,7 @@ const HomePage = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="p-4 rounded-lg shadow-md bg-blue-100">
           <h3 className="text-lg font-semibold">Tổng doanh thu</h3>
-          <p className="text-2xl">{overview.total_revenue?.toLocaleString() || 0} VNĐ</p>
+          <p className="text-2xl">{overview.total_revenue?.toLocaleString() || 0} USD</p>
         </div>
         <div className="p-4 rounded-lg shadow-md bg-green-100">
           <h3 className="text-lg font-semibold">Số sản phẩm mà cửa hàng đó bán</h3>
