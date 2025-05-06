@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 import psycopg2
-from psycopg2 import sql
+from psycopg2 import sql, errors
 
 home_bp = Blueprint('/', __name__)
 
@@ -8,137 +8,134 @@ home_bp = Blueprint('/', __name__)
 DB_CONFIG = {
     'dbname': 'm5_data',
     'user': 'postgres',
-    'password': 'H30012003h',  
+    'password': 'H30012003h',
+    'host': 'localhost',
     'port': '5432'
 }
 
 def get_db_connection():
     """Tạo kết nối đến PostgreSQL."""
-    return psycopg2.connect(**DB_CONFIG)
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        return conn
+    except errors.OperationalError as e:
+        print(f"Lỗi kết nối database: {e}")
+        raise Exception(f"Không thể kết nối đến database: {str(e)}")
 
-def apply_filters(query, params):
+def apply_filters(query, params, table_prefix='s'):
     """Hàm hỗ trợ thêm điều kiện lọc vào truy vấn SQL."""
     conditions = []
+    values = []
     if 'state' in params:
-        conditions.append("state_id = %s")
+        conditions.append(f"{table_prefix}.state_id = %s")
+        values.append(params['state'])
     if 'store_id' in params:
-        conditions.append("store_id = %s")
-    if 'date' in params:
-        conditions.append("date = %s")
+        conditions.append(f"{table_prefix}.store_id = %s")
+        values.append(params['store_id'])
+    if 'startDate' in params and 'endDate' in params:
+        conditions.append("c.date BETWEEN %s AND %s")
+        values.extend([params['startDate'], params['endDate']])
+    elif 'startDate' in params:
+        conditions.append("c.date >= %s")
+        values.append(params['startDate'])
+    elif 'endDate' in params:
+        conditions.append("c.date <= %s")
+        values.append(params['endDate'])
+    # Chỉ thêm điều kiện mặc định nếu không có startDate hoặc endDate
+    if not ('startDate' in params or 'endDate' in params):
+        conditions.append("c.date BETWEEN '2016-01-01' AND '2016-04-24'")
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
-        if "sales IS NOT NULL AND sell_price IS NOT NULL" not in query:
-            query += " AND sales IS NOT NULL AND sell_price IS NOT NULL"
-    else:
-        query += " WHERE sales IS NOT NULL AND sell_price IS NOT NULL"
-    return query, tuple(params.get(key) for key in ['state', 'store_id', 'date'] if key in params)
+    return query, tuple(values)
 
-@home_bp.route('/overview', methods=['GET'])
-def get_overview():
+@home_bp.route('/dashboard', methods=['GET'])
+def get_dashboard():
     params = request.args.to_dict()
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    query = """
-        SELECT SUM(sales * sell_price) as total_revenue,
-               COUNT(DISTINCT item_id) as total_products,
-               COUNT(DISTINCT store_id) as total_stores
-        FROM sales_raw
-    """
-    query, values = apply_filters(query, params)
-    
-    c.execute(query, values)
-    row = c.fetchone()
-    conn.close()
-    return jsonify({
-        "total_revenue": float(row[0]) if row[0] is not None else 0,
-        "total_products_sold": row[1],
-        "total_stores": row[2]
-    })
+    print(f"Params in /dashboard: {params}")
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
 
-@home_bp.route('/sales_by_date', methods=['GET'])
-def sales_by_date():
-    params = request.args.to_dict()
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    query = """
-        SELECT date, SUM(sales * sell_price) as daily_revenue
-        FROM sales_raw
-    """
-    query, values = apply_filters(query, params)
-    query += " GROUP BY date ORDER BY date"
-    
-    c.execute(query, values)
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([{"date": str(row[0]), "revenue": float(row[1]) if row[1] is not None else 0} for row in rows])
+        # Tổng quan
+        overview_query = """
+            SELECT 
+                COALESCE(SUM(s.sales * p.sell_price), 0) as total_revenue,
+                (
+                    SELECT COALESCE(SUM(s2.sales), 0)
+                    FROM sales s2
+                    LEFT JOIN calendar c ON s2.d_id = c.d_id
+                    LEFT JOIN prices p2 ON s2.item_id = p2.item_id AND s2.store_id = p2.store_id AND c.wm_yr_wk = p2.wm_yr_wk
+                    %s
+                ) as total_products_sold_by_store,
+                COUNT(DISTINCT REGEXP_REPLACE(s.item_id, '[0-9]+$', '')) as total_product_categories
+            FROM sales s
+            LEFT JOIN calendar c ON s.d_id = c.d_id
+            LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+        """
+        # Áp dụng điều kiện lọc cho subquery (với table_prefix='s2')
+        subquery, subquery_values = apply_filters("", params, table_prefix='s2')
+        overview_query = overview_query % subquery
+        # Áp dụng điều kiện lọc cho outer query (với table_prefix='s')
+        overview_query, overview_values = apply_filters(overview_query, params, table_prefix='s')
+        print(f"Overview Query: {overview_query}, Values: {overview_values + subquery_values}")
+        c.execute(overview_query, overview_values + subquery_values)
+        overview_row = c.fetchone()
 
-@home_bp.route('/top_products', methods=['GET'])
-def top_products():
-    params = request.args.to_dict()
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    query = """
-        SELECT item_id, SUM(sales * sell_price) as total_revenue
-        FROM sales_raw
-    """
-    query, values = apply_filters(query, params)
-    query += " GROUP BY item_id ORDER BY total_revenue DESC LIMIT 10"
-    
-    c.execute(query, values)
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([{"item_id": row[0], "total_revenue": float(row[1]) if row[1] is not None else 0} for row in rows])
+        # Doanh thu theo ngày
+        sales_by_date_query = """
+            SELECT 
+                c.date, COALESCE(SUM(s.sales * p.sell_price), 0) as daily_revenue
+            FROM sales s
+            LEFT JOIN calendar c ON s.d_id = c.d_id
+            LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+        """
+        sales_by_date_query, sales_by_date_values = apply_filters(sales_by_date_query, params)
+        sales_by_date_query += " GROUP BY c.date ORDER BY c.date"
+        print(f"Sales by Date Query: {sales_by_date_query}, Values: {sales_by_date_values}")
+        c.execute(sales_by_date_query, sales_by_date_values)
+        sales_by_date_rows = c.fetchall()
 
-@home_bp.route('/sales_by_store', methods=['GET'])
-def sales_by_store():
-    params = request.args.to_dict()
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    query = """
-        SELECT store_id, SUM(sales * sell_price) as total_revenue
-        FROM sales_raw
-    """
-    query, values = apply_filters(query, params)
-    query += " GROUP BY store_id"
-    
-    c.execute(query, values)
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([{"store_id": row[0], "total_revenue": float(row[1]) if row[1] is not None else 0} for row in rows])
+        # Top 10 sản phẩm (doanh thu theo sản phẩm)
+        top_products_query = """
+            SELECT 
+                s.item_id, COALESCE(SUM(s.sales * p.sell_price), 0) as product_revenue
+            FROM sales s
+            LEFT JOIN calendar c ON s.d_id = c.d_id
+            LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+        """
+        top_products_query, top_products_values = apply_filters(top_products_query, params)
+        top_products_query += " GROUP BY s.item_id HAVING SUM(COALESCE(s.sales * p.sell_price, 0)) > 0 ORDER BY product_revenue DESC LIMIT 10"
+        print(f"Top Products Query: {top_products_query}, Values: {top_products_values}")
+        c.execute(top_products_query, top_products_values)
+        top_products_rows = c.fetchall()
 
-@home_bp.route('/states', methods=['GET'])
-def get_states():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT DISTINCT state_id FROM sales_raw ORDER BY state_id")
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([row[0] for row in rows])
-
-@home_bp.route('/stores', methods=['GET'])
-def get_stores():
-    params = request.args.to_dict()
-    conn = get_db_connection()
-    c = conn.cursor()
-    query = "SELECT DISTINCT store_id FROM sales_raw"
-    if 'state' in params:
-        query += " WHERE state_id = %s"
-        c.execute(query, (params['state'],))
-    else:
-        c.execute(query)
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([row[0] for row in rows])
+        return jsonify({
+            "overview": {
+                "total_revenue": float(overview_row[0]) if overview_row[0] else 0,
+                "total_products_sold_by_store": overview_row[1] if overview_row[1] else 0,
+                "total_product_categories": overview_row[2] if overview_row[2] else 0
+            },
+            "sales_by_date": [{"date": str(row[0]), "revenue": float(row[1]) if row[1] else 0} for row in sales_by_date_rows],
+            "top_products": [{"item_id": row[0], "product_revenue": float(row[1]) if row[1] else 0} for row in top_products_rows]
+        })
+    except Exception as e:
+        print(f"Lỗi trong /dashboard: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
 
 @home_bp.route('/dates', methods=['GET'])
 def get_dates():
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute("SELECT DISTINCT date FROM sales_raw ORDER BY date")
-    rows = c.fetchall()
-    conn.close()
-    return jsonify([str(row[0]) for row in rows])
+    try:
+        conn = get_db_connection()
+        c = conn.cursor()
+        c.execute("SELECT DISTINCT date FROM calendar WHERE date BETWEEN '2016-01-01' AND '2016-04-24' ORDER BY date")
+        rows = c.fetchall()
+        return jsonify([str(row[0]) for row in rows])
+    except Exception as e:
+        print(f"Lỗi trong /dates: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'conn' in locals():
+            conn.close()
