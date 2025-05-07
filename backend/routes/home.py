@@ -72,10 +72,8 @@ def get_dashboard():
             LEFT JOIN calendar c ON s.d_id = c.d_id
             LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
         """
-        # Áp dụng điều kiện lọc cho subquery (với table_prefix='s2')
         subquery, subquery_values = apply_filters("", params, table_prefix='s2')
         overview_query = overview_query % subquery
-        # Áp dụng điều kiện lọc cho outer query (với table_prefix='s')
         overview_query, overview_values = apply_filters(overview_query, params, table_prefix='s')
         print(f"Overview Query: {overview_query}, Values: {overview_values + subquery_values}")
         c.execute(overview_query, overview_values + subquery_values)
@@ -95,19 +93,35 @@ def get_dashboard():
         c.execute(sales_by_date_query, sales_by_date_values)
         sales_by_date_rows = c.fetchall()
 
-        # Top 10 sản phẩm (doanh thu theo sản phẩm)
+        # Top 10 sản phẩm dựa trên tổng số sản phẩm bán được (sales)
         top_products_query = """
             SELECT 
-                s.item_id, COALESCE(SUM(s.sales * p.sell_price), 0) as product_revenue
+                s.item_id, COALESCE(SUM(s.sales), 0) as total_sales
             FROM sales s
             LEFT JOIN calendar c ON s.d_id = c.d_id
             LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
         """
         top_products_query, top_products_values = apply_filters(top_products_query, params)
-        top_products_query += " GROUP BY s.item_id HAVING SUM(COALESCE(s.sales * p.sell_price, 0)) > 0 ORDER BY product_revenue DESC LIMIT 10"
+        top_products_query += " GROUP BY s.item_id HAVING SUM(COALESCE(s.sales, 0)) > 0 ORDER BY total_sales DESC LIMIT 10"
         print(f"Top Products Query: {top_products_query}, Values: {top_products_values}")
         c.execute(top_products_query, top_products_values)
         top_products_rows = c.fetchall()
+
+        # Tỷ lệ doanh số theo loại sản phẩm (lấy tối đa 7 loại)
+        product_categories_query = """
+            SELECT 
+                REGEXP_REPLACE(s.item_id, '[0-9]+$', '') as category,
+                COALESCE(SUM(s.sales), 0) as total_sales
+            FROM sales s
+            LEFT JOIN calendar c ON s.d_id = c.d_id
+            LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+        """
+        product_categories_query, product_categories_values = apply_filters(product_categories_query, params)
+        product_categories_query += " GROUP BY category ORDER BY total_sales DESC LIMIT 7"
+        print(f"Product Categories Query: {product_categories_query}, Values: {product_categories_values}")
+        c.execute(product_categories_query, product_categories_values)
+        product_categories_rows = c.fetchall()
+        print(f"Product Categories Data: {product_categories_rows}")  # Log dữ liệu để kiểm tra
 
         return jsonify({
             "overview": {
@@ -116,7 +130,8 @@ def get_dashboard():
                 "total_product_categories": overview_row[2] if overview_row[2] else 0
             },
             "sales_by_date": [{"date": str(row[0]), "revenue": float(row[1]) if row[1] else 0} for row in sales_by_date_rows],
-            "top_products": [{"item_id": row[0], "product_revenue": float(row[1]) if row[1] else 0} for row in top_products_rows]
+            "top_products": [{"item_id": row[0], "total_sales": int(row[1]) if row[1] else 0} for row in top_products_rows],
+            "product_categories": [{"category": row[0], "total_sales": int(row[1]) if row[1] else 0} for row in product_categories_rows]
         })
     except Exception as e:
         print(f"Lỗi trong /dashboard: {str(e)}")

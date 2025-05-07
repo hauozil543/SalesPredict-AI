@@ -14,16 +14,16 @@ const HomePage = () => {
   const [overview, setOverview] = useState({});
   const [salesByDate, setSalesByDate] = useState([]);
   const [topProducts, setTopProducts] = useState([]);
+  const [productCategories, setProductCategories] = useState([]);
   const [stores, setStores] = useState([]);
   const [dates, setDates] = useState([]);
-  const [selectedState, setSelectedState] = useState("CA"); // Giá trị mặc định
-  const [selectedStore, setSelectedStore] = useState("CA_1"); // Giá trị mặc định
-  const [startDate, setStartDate] = useState("2016-01-01"); // Giá trị mặc định
-  const [endDate, setEndDate] = useState("2016-04-24"); // Giá trị mặc định
+  const [selectedState, setSelectedState] = useState("CA");
+  const [selectedStore, setSelectedStore] = useState("CA_1");
+  const [startDate, setStartDate] = useState("2016-01-01");
+  const [endDate, setEndDate] = useState("2016-04-24");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Lấy danh sách ngày từ API
   useEffect(() => {
     const fetchDates = async () => {
       setLoading(true);
@@ -43,33 +43,25 @@ const HomePage = () => {
     fetchDates();
   }, []);
 
-  // Cập nhật danh sách cửa hàng khi bang thay đổi
   useEffect(() => {
     setStores(storesByState[selectedState] || []);
-    if (
-      storesByState[selectedState] &&
-      storesByState[selectedState].length > 0
-    ) {
+    if (storesByState[selectedState] && storesByState[selectedState].length > 0) {
       setSelectedStore(storesByState[selectedState][0]);
     } else {
       setSelectedStore("");
     }
   }, [selectedState]);
 
-  // Hàm gọi API khi nhấn nút tìm kiếm
   const handleSearch = async () => {
     if (!selectedState || !selectedStore || !startDate || !endDate) {
       setError("Vui lòng điền đầy đủ thông tin lọc.");
       return;
     }
 
-    // Kiểm tra ngày hợp lệ
     const start = new Date(startDate);
     const end = new Date(endDate);
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-      setError(
-        "Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu và định dạng hợp lệ."
-      );
+      setError("Ngày kết thúc phải lớn hơn hoặc bằng ngày bắt đầu và định dạng hợp lệ.");
       return;
     }
 
@@ -82,17 +74,16 @@ const HomePage = () => {
       if (startDate) queryParams.append("startDate", startDate);
       if (endDate) queryParams.append("endDate", endDate);
 
-      console.log(`Fetching with params: ${queryParams.toString()}`); // Log params để debug
-
-      const dashboardRes = await fetch(
-        `http://localhost:5000/dashboard?${queryParams.toString()}`
-      );
+      console.log(`Fetching with params: ${queryParams.toString()}`);
+      const dashboardRes = await fetch(`http://localhost:5000/dashboard?${queryParams.toString()}`);
       if (!dashboardRes.ok) throw new Error("Lỗi khi lấy dữ liệu từ dashboard");
       const data = await dashboardRes.json();
+      console.log("API Response:", data);
 
       setOverview(data.overview);
       setSalesByDate(data.sales_by_date);
       setTopProducts(data.top_products);
+      setProductCategories(data.product_categories);
     } catch (err) {
       setError("Không thể lấy dữ liệu. Vui lòng thử lại.");
       console.error("Lỗi khi lấy dữ liệu:", err);
@@ -117,22 +108,36 @@ const HomePage = () => {
     labels: topProducts.map((p) => p.item_id),
     datasets: [
       {
-        label: "Doanh thu theo sản phẩm",
-        data: topProducts.map((p) => p.product_revenue),
+        label: "Top 10 sản phẩm bán chạy",
+        data: topProducts.map((p) => p.total_sales),
         backgroundColor: [
-          "#FF6384",
-          "#36A2EB",
-          "#FFCE56",
-          "#4BC0C0",
-          "#9966FF",
-          "#FF9F40",
-          "#FFCD56",
-          "#4BC0C0",
-          "#36A2EB",
-          "#FF6384",
+          "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF",
+          "#FF9F40", "#FFCD56", "#4BC0C0", "#36A2EB", "#FF6384",
         ],
       },
     ],
+  };
+
+  const productCategoriesChart = {
+    labels: productCategories.map((p) => p.category),
+    datasets: [
+      {
+        label: "Tỷ lệ doanh số theo loại sản phẩm",
+        data: productCategories.map((p) => p.total_sales),
+        backgroundColor: [
+          "#FF6384", "#36A2EB", "#FFCE56", "#4BC0C0", "#9966FF",
+          "#FF9F40", "#FFCD56",
+        ],
+      },
+    ],
+  };
+
+  const pieChartOptions = {
+    plugins: {
+      legend: {
+        display: false, // Tắt chú thích
+      },
+    },
   };
 
   return (
@@ -141,9 +146,7 @@ const HomePage = () => {
 
       <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="block text-lg font-semibold mb-2">
-            Lọc theo bang
-          </label>
+          <label className="block text-lg font-semibold mb-2">Lọc theo bang</label>
           <select
             value={selectedState}
             onChange={(e) => setSelectedState(e.target.value)}
@@ -151,16 +154,12 @@ const HomePage = () => {
           >
             <option value="">Chọn bang</option>
             {states.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
+              <option key={state} value={state}>{state}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-lg font-semibold mb-2">
-            Lọc theo cửa hàng
-          </label>
+          <label className="block text-lg font-semibold mb-2">Lọc theo cửa hàng</label>
           <select
             value={selectedStore}
             onChange={(e) => setSelectedStore(e.target.value)}
@@ -169,16 +168,12 @@ const HomePage = () => {
           >
             <option value="">Chọn cửa hàng</option>
             {stores.map((store) => (
-              <option key={store} value={store}>
-                {store}
-              </option>
+              <option key={store} value={store}>{store}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-lg font-semibold mb-2">
-            Lọc theo khoảng thời gian
-          </label>
+          <label className="block text-lg font-semibold mb-2">Lọc theo khoảng thời gian</label>
           <div className="flex gap-2">
             <input
               type="date"
@@ -209,6 +204,8 @@ const HomePage = () => {
       </button>
       {loading && <p className="text-center">Đang tải dữ liệu...</p>}
       {error && <p className="text-red-500 text-center">{error}</p>}
+
+      {/* Thẻ tổng quan */}
       <div className="grid grid-cols-3 gap-4 sm:grid-cols-2 md:gap-6">
         <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] md:p-6">
           <div className="mt-5 flex items-end justify-between">
@@ -251,22 +248,19 @@ const HomePage = () => {
         </div>
       </div>
 
+      {/* Biểu đồ */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-2">Doanh thu theo thời gian</h2>
         <Line data={salesByDateChart} height={250} />
       </div>
-      <div className="container flex items-center justify-center gap-[24px]">
-        <div className="mb-6 w-full">
-          <h2 className="text-xl font-semibold mb-2">
-            Top 10 sản phẩm bán chạy
-          </h2>
-          <Bar data={topProductsChart} />
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:gap-6">
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-2">Top 10 sản phẩm bán chạy</h2>
+          <Bar data={topProductsChart}  />
         </div>
-        <div className="mb-6 w-full">
-          <h2 className="text-xl font-semibold mb-2">
-            Tỷ lệ doanh thu theo sản phẩm
-          </h2>
-          <Pie data={topProductsChart} />
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-2">Tỷ lệ doanh số theo loại sản phẩm</h2>
+          <Pie data={productCategoriesChart} options={pieChartOptions} />
         </div>
       </div>
     </div>
