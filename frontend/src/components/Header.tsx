@@ -18,16 +18,16 @@ const Header = () => {
             Home
           </Link>
           <Link
-            to="/history"
-            className="text-slate-700 font-medium text-[15px] hover:text-[#007bff] transition"
-          >
-            History
-          </Link>
-          <Link
             to="/forecast"
             className="text-slate-700 font-medium text-[15px] hover:text-[#007bff] transition"
           >
             Forecast
+          </Link>
+          <Link
+            to="/history"
+            className="text-slate-700 font-medium text-[15px] hover:text-[#007bff] transition"
+          >
+            History
           </Link>
         </nav>
 

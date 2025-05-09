@@ -9,8 +9,8 @@ function App() {
     <Routes>
       <Route path="/" element={<Adminlayout />}>
         <Route index element={<HomePage />} />
-        <Route path="history" element={<History />} />
         <Route path="forecast" element={<Forecast />} />
+        <Route path="history" element={<History />} />
       </Route>
     </Routes>
   );

@@ -4,8 +4,8 @@ const Forecast = () => {
   const [formData, setFormData] = useState({
     item_id: 'FOODS_1_218',
     store_id: 'CA_1',
-    start_date: '2015-04-25',
-    end_date: '2015-05-25',
+    start_date: '2016-04-25',
+    end_date: '2016-05-03',
   });
   const [predictions, setPredictions] = useState([]);
   const [loading, setLoading] = useState(false);

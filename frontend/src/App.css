@@ -40,3 +40,16 @@
 .read-the-docs {
   color: #888;
 }
+
+.chart-container {
+  height: 400px; /* Đặt chiều cao cố định */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.chart-container canvas {
+  max-height: 100%; /* Đảm bảo biểu đồ không vượt quá chiều cao */
+  max-width: 100%; /* Đảm bảo biểu đồ không vượt quá chiều rộng */
+}

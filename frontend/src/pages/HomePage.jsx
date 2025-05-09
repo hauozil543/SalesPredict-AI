@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, use } from "react";
 import { Bar, Line, Pie } from "react-chartjs-2";
 import "chart.js/auto";
 
@@ -92,6 +92,10 @@ const HomePage = () => {
     }
   };
 
+  useEffect(() => {
+    handleSearch(); // Gọi hàm tìm kiếm khi component được mount
+  },[])
+
   const salesByDateChart = {
     labels: salesByDate.map((d) => d.date),
     datasets: [
@@ -144,7 +148,7 @@ const HomePage = () => {
     <div className="container mx-auto p-4">
       <h1 className="text-3xl font-bold mb-6">Tổng quan hệ thống</h1>
 
-      <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-4 sm:grid-cols-2 md:gap-6">
         <div>
           <label className="block text-lg font-semibold mb-2">Lọc theo bang</label>
           <select
@@ -251,16 +255,16 @@ const HomePage = () => {
       {/* Biểu đồ */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-2">Doanh thu theo thời gian</h2>
-        <Line data={salesByDateChart} height={250} />
+        <Line data={salesByDateChart} height={100} />
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:gap-6">
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-2">Top 10 sản phẩm bán chạy</h2>
-          <Bar data={topProductsChart}  />
+          <Bar data={topProductsChart} height={300}/>
         </div>
         <div className="mb-6">
           <h2 className="text-xl font-semibold mb-2">Tỷ lệ doanh số theo loại sản phẩm</h2>
-          <Pie data={productCategoriesChart} options={pieChartOptions} />
+          <Pie data={productCategoriesChart} options={pieChartOptions} width={50} height={50} />
         </div>
       </div>
     </div>
