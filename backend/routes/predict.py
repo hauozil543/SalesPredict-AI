@@ -7,19 +7,18 @@ import torch.nn as nn
 from datetime import datetime, timedelta
 import pickle
 from flask_cors import CORS
+
 # Định nghĩa đường dẫn cơ sở dữ liệu chung
 DB_PATH = 'C:/Users/Ho Hau/Downloads/M5/backend/historical_data.db'
 
 # Kiểm tra PyTorch và GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
 predict_bp = Blueprint('predict', __name__)
 
 # Cấu hình CORS cho Blueprint
 CORS(predict_bp, resources={r"/predict": {"origins": "http://localhost:5173"}})
 CORS(predict_bp, resources={r"/history": {"origins": "http://localhost:5173"}})
-
 
 # Định nghĩa mô hình LSTM
 class LSTMModel(nn.Module):
@@ -59,26 +58,6 @@ TIME_STEPS = 28
 NUM_FEATURES = 12
 FEATURES = ['sales', 'sell_price', 'day_of_week', 'snap_CA', 'is_holiday', 'month', 'day_of_month',
             'sales_lag_7', 'sales_lag_14', 'sales_lag_28', 'sales_roll_mean_7', 'sales_roll_mean_14']
-
-def init_predictions_table():
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS predictions
-                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                      item_id TEXT NOT NULL,
-                      store_id TEXT NOT NULL,
-                      date TEXT NOT NULL,
-                      prediction REAL NOT NULL,
-                      timestamp TEXT NOT NULL)''')
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error in init_predictions_table: {str(e)}")
-        raise
-
-# Gọi hàm init_predictions_table ngay khi file được chạy
-init_predictions_table()
 
 def get_historical_data(item_id, store_id, end_date):
     try:
@@ -243,7 +222,7 @@ def get_history():
                    ORDER BY timestamp DESC, date ASC'''
         params = (item_id, item_id, store_id, store_id, start_date, start_date, end_date, end_date)
 
-        print(f"Attempting to connect to database at: {DB_PATH}")
+        print(f"Attempting to connect to合作 at: {DB_PATH}")
         conn = sqlite3.connect(DB_PATH)
         print("Database connection successful for get_history")
         c = conn.cursor()

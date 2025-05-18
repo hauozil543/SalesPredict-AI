@@ -1,10 +1,11 @@
 from flask import Blueprint, jsonify, request
 import psycopg2
-from psycopg2 import sql, errors
+from psycopg2 import pool, errors
+import time
 
 home_bp = Blueprint('/', __name__)
 
-# Cấu hình kết nối PostgreSQL
+# Cấu hình connection pool
 DB_CONFIG = {
     'dbname': 'm5_data',
     'user': 'postgres',
@@ -12,17 +13,21 @@ DB_CONFIG = {
     'host': 'localhost',
     'port': '5432'
 }
+db_pool = psycopg2.pool.SimpleConnectionPool(1, 20, **DB_CONFIG)
 
 def get_db_connection():
-    """Tạo kết nối đến PostgreSQL."""
+    """Tạo kết nối đến PostgreSQL từ pool."""
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        return conn
+        return db_pool.getconn()
     except errors.OperationalError as e:
         print(f"Lỗi kết nối database: {e}")
         raise Exception(f"Không thể kết nối đến database: {str(e)}")
 
-def apply_filters(query, params, table_prefix='s'):
+def release_db_connection(conn):
+    """Trả kết nối về pool."""
+    db_pool.putconn(conn)
+
+def apply_filters(params, table_prefix='s'):
     """Hàm hỗ trợ thêm điều kiện lọc vào truy vấn SQL."""
     conditions = []
     values = []
@@ -41,17 +46,16 @@ def apply_filters(query, params, table_prefix='s'):
     elif 'endDate' in params:
         conditions.append("c.date <= %s")
         values.append(params['endDate'])
-    # Chỉ thêm điều kiện mặc định nếu không có startDate hoặc endDate
     if not ('startDate' in params or 'endDate' in params):
         conditions.append("c.date BETWEEN '2016-01-01' AND '2016-04-24'")
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-    return query, tuple(values)
+    conditions.append(f"{table_prefix}.sales > 0")  # Loại bỏ sớm các hàng không có doanh số
+    return conditions, values
 
 @home_bp.route('/dashboard', methods=['GET'])
 def get_dashboard():
     params = request.args.to_dict()
     print(f"Params in /dashboard: {params}")
+    conn = None
     try:
         conn = get_db_connection()
         c = conn.cursor()
@@ -65,47 +69,70 @@ def get_dashboard():
                     FROM sales s2
                     LEFT JOIN calendar c ON s2.d_id = c.d_id
                     LEFT JOIN prices p2 ON s2.item_id = p2.item_id AND s2.store_id = p2.store_id AND c.wm_yr_wk = p2.wm_yr_wk
-                    %s
+                    WHERE %s
                 ) as total_products_sold_by_store,
                 COUNT(DISTINCT REGEXP_REPLACE(s.item_id, '[0-9]+$', '')) as total_product_categories
             FROM sales s
             LEFT JOIN calendar c ON s.d_id = c.d_id
             LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+            WHERE %s
         """
-        subquery, subquery_values = apply_filters("", params, table_prefix='s2')
-        overview_query = overview_query % subquery
-        overview_query, overview_values = apply_filters(overview_query, params, table_prefix='s')
-        print(f"Overview Query: {overview_query}, Values: {overview_values + subquery_values}")
-        c.execute(overview_query, overview_values + subquery_values)
+        # Lấy điều kiện và giá trị cho subquery
+        subquery_conditions, subquery_values = apply_filters(params, table_prefix='s2')
+        subquery_where = " AND ".join(subquery_conditions) if subquery_conditions else "TRUE"
+        
+        # Lấy điều kiện và giá trị cho truy vấn chính
+        main_conditions, main_values = apply_filters(params, table_prefix='s')
+        main_where = " AND ".join(main_conditions) if main_conditions else "TRUE"
+        
+        # Chèn điều kiện vào truy vấn
+        final_query = overview_query % (subquery_where, main_where)
+        
+        # Kết hợp tất cả giá trị
+        all_values = subquery_values + main_values
+        print(f"Overview Query: {final_query}, Values: {all_values}")
+        start_time = time.time()
+        c.execute(final_query, all_values)
         overview_row = c.fetchone()
+        print(f"Overview query took {time.time() - start_time:.2f} seconds")
 
         # Doanh thu theo ngày
         sales_by_date_query = """
             SELECT 
                 c.date, COALESCE(SUM(s.sales * p.sell_price), 0) as daily_revenue
             FROM sales s
-            LEFT JOIN calendar c ON s.d_id = c.d_id
-            LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+            INNER JOIN calendar c ON s.d_id = c.d_id
+            INNER JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
         """
-        sales_by_date_query, sales_by_date_values = apply_filters(sales_by_date_query, params)
+        conditions, values = apply_filters(params)
+        where_clause = " AND ".join(conditions) if conditions else ""
+        if where_clause:
+            sales_by_date_query += f" WHERE {where_clause}"
         sales_by_date_query += " GROUP BY c.date ORDER BY c.date"
-        print(f"Sales by Date Query: {sales_by_date_query}, Values: {sales_by_date_values}")
-        c.execute(sales_by_date_query, sales_by_date_values)
+        print(f"Sales by Date Query: {sales_by_date_query}, Values: {values}")
+        start_time = time.time()
+        c.execute(sales_by_date_query, values)
         sales_by_date_rows = c.fetchall()
+        print(f"Sales by date query took {time.time() - start_time:.2f} seconds")
 
-        # Top 10 sản phẩm dựa trên tổng số sản phẩm bán được (sales)
+        # Top 10 sản phẩm dựa trên tổng số sản phẩm bán được
         top_products_query = """
             SELECT 
                 s.item_id, COALESCE(SUM(s.sales), 0) as total_sales
             FROM sales s
-            LEFT JOIN calendar c ON s.d_id = c.d_id
-            LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+            INNER JOIN calendar c ON s.d_id = c.d_id
+            INNER JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
         """
-        top_products_query, top_products_values = apply_filters(top_products_query, params)
+        conditions, values = apply_filters(params)
+        where_clause = " AND ".join(conditions) if conditions else ""
+        if where_clause:
+            top_products_query += f" WHERE {where_clause}"
         top_products_query += " GROUP BY s.item_id HAVING SUM(COALESCE(s.sales, 0)) > 0 ORDER BY total_sales DESC LIMIT 10"
-        print(f"Top Products Query: {top_products_query}, Values: {top_products_values}")
-        c.execute(top_products_query, top_products_values)
+        print(f"Top Products Query: {top_products_query}, Values: {values}")
+        start_time = time.time()
+        c.execute(top_products_query, values)
         top_products_rows = c.fetchall()
+        print(f"Top products query took {time.time() - start_time:.2f} seconds")
 
         # Tỷ lệ doanh số theo loại sản phẩm (lấy tối đa 7 loại)
         product_categories_query = """
@@ -113,15 +140,20 @@ def get_dashboard():
                 REGEXP_REPLACE(s.item_id, '[0-9]+$', '') as category,
                 COALESCE(SUM(s.sales), 0) as total_sales
             FROM sales s
-            LEFT JOIN calendar c ON s.d_id = c.d_id
-            LEFT JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
+            INNER JOIN calendar c ON s.d_id = c.d_id
+            INNER JOIN prices p ON s.item_id = p.item_id AND s.store_id = p.store_id AND c.wm_yr_wk = p.wm_yr_wk
         """
-        product_categories_query, product_categories_values = apply_filters(product_categories_query, params)
+        conditions, values = apply_filters(params)
+        where_clause = " AND ".join(conditions) if conditions else ""
+        if where_clause:
+            product_categories_query += f" WHERE {where_clause}"
         product_categories_query += " GROUP BY category ORDER BY total_sales DESC LIMIT 7"
-        print(f"Product Categories Query: {product_categories_query}, Values: {product_categories_values}")
-        c.execute(product_categories_query, product_categories_values)
+        print(f"Product Categories Query: {product_categories_query}, Values: {values}")
+        start_time = time.time()
+        c.execute(product_categories_query, values)
         product_categories_rows = c.fetchall()
-        print(f"Product Categories Data: {product_categories_rows}")  # Log dữ liệu để kiểm tra
+        print(f"Product categories query took {time.time() - start_time:.2f} seconds")
+        print(f"Product Categories Data: {product_categories_rows}")
 
         return jsonify({
             "overview": {
@@ -137,20 +169,23 @@ def get_dashboard():
         print(f"Lỗi trong /dashboard: {str(e)}")
         return jsonify({"error": str(e)}), 500
     finally:
-        if 'conn' in locals():
-            conn.close()
+        if conn:
+            release_db_connection(conn)
 
 @home_bp.route('/dates', methods=['GET'])
 def get_dates():
+    conn = None
     try:
         conn = get_db_connection()
         c = conn.cursor()
+        start_time = time.time()
         c.execute("SELECT DISTINCT date FROM calendar WHERE date BETWEEN '2016-01-01' AND '2016-04-24' ORDER BY date")
         rows = c.fetchall()
+        print(f"Dates query took {time.time() - start_time:.2f} seconds")
         return jsonify([str(row[0]) for row in rows])
     except Exception as e:
         print(f"Lỗi trong /dates: {str(e)}")
         return jsonify({"error": str(e)}), 500
     finally:
-        if 'conn' in locals():
-            conn.close()
+        if conn:
+            release_db_connection(conn)
