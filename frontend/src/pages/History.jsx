@@ -93,18 +93,8 @@ const History = () => {
     <div className="max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">Lịch Sử Dự Báo</h1>
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md mb-6">
+        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Item ID</label>
-            <input
-              type="text"
-              name="item_id"
-              value={formData.item_id}
-              onChange={handleChange}
-              className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-              placeholder="Ví dụ: FOODS_1_218"
-            />
-          </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Store ID</label>
             <input
@@ -114,6 +104,17 @@ const History = () => {
               onChange={handleChange}
               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
               placeholder="Ví dụ: CA_1"
+            />
+          </div>          
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Item ID</label>
+            <input
+              type="text"
+              name="item_id"
+              value={formData.item_id}
+              onChange={handleChange}
+              className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+              placeholder="Ví dụ: FOODS_1_218"
             />
           </div>
           <div>

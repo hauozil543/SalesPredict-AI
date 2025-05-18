@@ -47,22 +47,22 @@ const Forecast = () => {
       <h1 className="text-2xl font-bold mb-4">Dự báo Doanh Số</h1>
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-lg shadow-md">
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700">Item ID</label>
-          <input
-            type="text"
-            name="item_id"
-            value={formData.item_id}
-            onChange={handleChange}
-            className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-            required
-          />
-        </div>
-        <div className="mb-4">
           <label className="block text-sm font-medium text-gray-700">Store ID</label>
           <input
             type="text"
             name="store_id"
             value={formData.store_id}
+            onChange={handleChange}
+            className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+            required
+          />
+        </div>        
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700">Item ID</label>
+          <input
+            type="text"
+            name="item_id"
+            value={formData.item_id}
             onChange={handleChange}
             className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
             required

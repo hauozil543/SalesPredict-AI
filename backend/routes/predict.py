@@ -12,13 +12,6 @@ DB_PATH = 'C:/Users/Ho Hau/Downloads/M5/backend/historical_data.db'
 
 # Kiểm tra PyTorch và GPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("PyTorch version:", torch.__version__)
-print("CUDA available:", torch.cuda.is_available())
-print("Number of GPUs:", torch.cuda.device_count())
-if torch.cuda.is_available():
-    print("GPU Name:", torch.cuda.get_device_name(0))
-else:
-    print("Warning: No GPU found. Running on CPU.")
 
 
 predict_bp = Blueprint('predict', __name__)
@@ -62,8 +55,6 @@ with open('C:/Users/Ho Hau/Downloads/M5/backend/utils/scaler.pkl', 'rb') as f:
 
 calendar = pd.read_csv('C:/Users/Ho Hau/Downloads/M5/data/raw/calendar.csv')
 calendar['date'] = pd.to_datetime(calendar['date'])
-print(f"Calendar date range: {calendar['date'].min()} to {calendar['date'].max()}")
-
 TIME_STEPS = 28
 NUM_FEATURES = 12
 FEATURES = ['sales', 'sell_price', 'day_of_week', 'snap_CA', 'is_holiday', 'month', 'day_of_month',
@@ -71,9 +62,7 @@ FEATURES = ['sales', 'sell_price', 'day_of_week', 'snap_CA', 'is_holiday', 'mont
 
 def init_predictions_table():
     try:
-        print(f"Attempting to connect to database at: {DB_PATH}")
         conn = sqlite3.connect(DB_PATH)
-        print("Database connection successful for init_predictions_table")
         c = conn.cursor()
         c.execute('''CREATE TABLE IF NOT EXISTS predictions
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +72,6 @@ def init_predictions_table():
                       prediction REAL NOT NULL,
                       timestamp TEXT NOT NULL)''')
         conn.commit()
-        print("Table 'predictions' created or already exists")
         conn.close()
     except Exception as e:
         print(f"Error in init_predictions_table: {str(e)}")
@@ -94,9 +82,7 @@ init_predictions_table()
 
 def get_historical_data(item_id, store_id, end_date):
     try:
-        print(f"Attempting to connect to database at: {DB_PATH}")
         conn = sqlite3.connect(DB_PATH)
-        print("Database connection successful for get_historical_data")
         query = '''SELECT date, sales, sell_price, day_of_week, snap_CA, is_holiday, month, day_of_month,
                           sales_lag_7, sales_lag_14, sales_lag_28, sales_roll_mean_7, sales_roll_mean_14
                    FROM historical_data
@@ -163,10 +149,7 @@ def predict():
             dummy_array = np.zeros((1, NUM_FEATURES))
             dummy_array[0, 0] = prediction_scaled
             prediction = scaler.inverse_transform(dummy_array)[0, 0]
-            
-            print(f"Attempting to connect to database at: {DB_PATH}")
             conn = sqlite3.connect(DB_PATH)
-            print("Database connection successful for predict")
             c = conn.cursor()
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             c.execute('''INSERT INTO predictions (item_id, store_id, date, prediction, timestamp)
